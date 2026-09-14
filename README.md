@@ -4,33 +4,19 @@ App personal para registrar entrenamientos y llevar la sobrecarga progresiva.
 Funciona en el iPhone como una app normal, **sin internet** y **sin cuentas**:
 todos los datos se guardan en el propio teléfono.
 
+## 📲 https://pablorivera6.github.io/gym-pablo/
+
 ## Cómo instalarla en el iPhone
 
-La app es una PWA: se instala desde Safari, no desde la App Store.
+1. Abre ese enlace en **Safari** (no en Chrome — el "añadir a pantalla de inicio" solo funciona bien en Safari).
+2. Toca el botón **Compartir** (el cuadrito con la flecha hacia arriba).
+3. Elige **"Añadir a pantalla de inicio"** → **Añadir**.
 
-1. En el Mac, dentro de esta carpeta, ejecuta:
-   ```
-   npm run dev -- --host
-   ```
-   Te va a imprimir dos direcciones. Copia la de **Network**, algo como
-   `http://192.168.1.34:5173`.
-2. Conecta el iPhone al **mismo WiFi** que el Mac.
-3. Abre esa dirección en **Safari** del iPhone.
-4. Toca el botón **Compartir** (el cuadrito con la flecha hacia arriba).
-5. Elige **"Añadir a pantalla de inicio"** → **Añadir**.
+Queda un ícono de mancuerna en tu pantalla de inicio. Ábrelo desde ahí y se ve
+a pantalla completa, como una app nativa.
 
-Listo: queda un ícono de mancuerna en tu pantalla de inicio. Ábrelo desde ahí
-(no desde Safari) y se ve a pantalla completa, como una app nativa.
-
-> La primera vez déjala abierta ~20 segundos con WiFi para que descargue las
-> fotos de los ejercicios. Después funciona sin señal, incluso en el sótano del gym.
-
-### Si quieres que funcione sin tener el Mac encendido
-
-La opción de arriba necesita el Mac prendido y en el mismo WiFi. Para tenerla
-siempre disponible, sube la carpeta `dist/` (la que genera `npm run build`) a
-cualquier hosting estático gratuito — Netlify, Vercel o GitHub Pages — y abre esa
-URL en el iPhone. El proceso de "Añadir a pantalla de inicio" es el mismo.
+> La primera vez déjala abierta ~30 segundos con WiFi para que descargue las
+> 68 fotos de los ejercicios. Después funciona sin señal, incluso en el sótano del gym.
 
 ## Cómo funciona la sobrecarga progresiva
 
@@ -77,9 +63,12 @@ con todo tu historial, y con **Restaurar respaldo** lo recuperas.
 npm install                        # instalar dependencias
 npm run dev                        # servidor local
 npm run build                      # genera dist/ listo para publicar
-node scripts/fetch-exercises.mjs   # vuelve a bajar las fotos de los ejercicios
+node scripts/fetch-exercises.mjs   # vuelve a bajar y procesar las fotos
 python3 scripts/make-icons.py      # regenera los iconos de la app
 ```
+
+Cada `git push` a `main` vuelve a publicar la app automáticamente
+(ver `.github/workflows/deploy.yml`). No hay que subir nada a mano.
 
 ### Estructura
 
@@ -96,4 +85,15 @@ public/
   catalog.json           876 ejercicios para añadir a la rutina
 ```
 
-Fotos e información de ejercicios: [free-exercise-db](https://github.com/yuhonas/free-exercise-db), dominio público.
+## Las fotos
+
+Vienen de [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (dominio
+público) y pasan por `scripts/fetch-exercises.mjs`, que para cada una:
+
+1. Detecta al levantador con **Vision** (framework de macOS) y recorta un cuadrado
+   cerrado sobre él — en el original la persona se veía pequeña en un salón enorme.
+2. Le aplica un grado **desaturado de alto contraste** con viñeta, para que las 68
+   fotos se vean como una sola serie y la técnica se lea sobre fondo oscuro.
+
+El script solo corre en macOS (usa Vision y CoreImage). Las fotos ya procesadas
+están versionadas, así que compilar la app no lo necesita.
