@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import type { Exercise } from '../types'
+import type { Exercise, Place } from '../types'
+import { PLACE_LABEL } from '../types'
 import { useRoutine, useStore } from '../lib/store'
 import { history, personalRecord, suggest, lastPerformance } from '../lib/progression'
 import { kg as fmtKg, relativeDay, volumeLabel } from '../lib/format'
@@ -13,6 +14,7 @@ export function Progress() {
   const state = useStore()
   const routine = useRoutine()
   const [metric, setMetric] = useState<Metric>('maxKg')
+  const [place, setPlace] = useState<Place>(state.settings.lastPlace ?? 'gym')
   const [query, setQuery] = useState('')
 
   // Un ejercicio puede repetirse en varios días: lo listo una sola vez por id
@@ -25,7 +27,7 @@ export function Progress() {
   }, [routine])
 
   const withData = all
-    .map((e) => ({ ...e, data: history(state.sessions, e.ex.id) }))
+    .map((e) => ({ ...e, data: history(state.sessions, e.ex.id, place) }))
     .filter((e) => e.data.length > 0)
     .filter((e) => e.ex.name.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => b.data.length - a.data.length)
@@ -45,6 +47,17 @@ export function Progress() {
         />
       </div>
 
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        {(['gym', 'casa'] as const).map((p) => (
+          <button key={p} onClick={() => setPlace(p)}
+                  className={`h-12 rounded-sm border display text-xl tracking-wide transition-colors ${
+                    place === p ? 'bg-blood-500 border-blood-400 text-bone' : 'bg-ink-850 border-ink-800 text-ink-400'
+                  }`}>
+            {PLACE_LABEL[p]}
+          </button>
+        ))}
+      </div>
+
       <div className="flex gap-1 p-1 rounded bg-ink-850 border border-ink-800 mb-4">
         {([['maxKg', 'Peso máximo'], ['volume', 'Volumen']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setMetric(k)}
@@ -54,12 +67,15 @@ export function Progress() {
         ))}
       </div>
 
-      {withData.length === 0 && <Empty icon="—" title="Sin resultados" sub="Ningún ejercicio registrado coincide con esa búsqueda." />}
+      {withData.length === 0 && (query
+        ? <Empty icon="—" title="Sin resultados" sub="Ningún ejercicio registrado coincide con esa búsqueda." />
+        : <Empty icon="—" title={`Nada en ${PLACE_LABEL[place].toLowerCase()} todavía`} sub={`Cuando termines un entreno en ${PLACE_LABEL[place].toLowerCase()}, aquí verás sus pesos. Los de ${place === 'gym' ? 'casa' : 'el gym'} van aparte.`} />
+      )}
 
       <div className="space-y-3">
         {withData.map(({ ex, dayName, hex, data }) => {
-          const pr = personalRecord(state.sessions, ex.id)
-          const last = lastPerformance(state.sessions, ex.id)
+          const pr = personalRecord(state.sessions, ex.id, place)
+          const last = lastPerformance(state.sessions, ex.id, place)
           const tip = suggest(ex, last?.sets ?? null)
           const first = data[0][metric]
           const now = data[data.length - 1][metric]

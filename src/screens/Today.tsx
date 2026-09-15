@@ -1,8 +1,11 @@
-import type { Day } from '../types'
+import { useState } from 'react'
+import type { Day, Place, Session } from '../types'
+import { PLACE_LABEL } from '../types'
 import { CYCLE } from '../data/routine'
 import { actions, useRoutine, useStore } from '../lib/store'
 import { stats } from '../lib/progression'
-import { relativeDay, volumeLabel } from '../lib/format'
+import { longDate, relativeDay, volumeLabel } from '../lib/format'
+import { PlacePicker } from '../components/PlacePicker'
 import { ExerciseImage } from '../components/ExerciseImage'
 import { Stat } from '../components/ui'
 import { emptySession } from './Workout'
@@ -17,10 +20,19 @@ export function Today({ onStart }: { onStart: (day: Day) => void }) {
   const active = state.active
   const activeDay = active ? routine.find((d) => d.id === active.dayId) : null
 
-  const start = (d: Day) => {
-    actions.setActive(emptySession(d.id))
-    onStart(d)
+  // Primero se elige el día, luego dónde se entrena
+  const [picking, setPicking] = useState<Day | null>(null)
+  const start = (d: Day) => setPicking(d)
+  const go = (place: Place) => {
+    if (!picking) return
+    actions.setSettings({ lastPlace: place })
+    actions.setActive(emptySession(picking.id, place))
+    onStart(picking)
+    setPicking(null)
   }
+
+  // Entrenos guardados antes de que existiera gym/casa: hay que clasificarlos
+  const unplaced = state.sessions.filter((x): x is Session & { finishedAt: string } => !!x.finishedAt && !x.place)
 
   return (
     <div className="px-4 pb-6" style={{ paddingTop: 'calc(var(--safe-t) + 1rem)' }}>
@@ -31,6 +43,36 @@ export function Today({ onStart }: { onStart: (day: Day) => void }) {
         <h1 className="display text-4xl mt-1 leading-none">Hoy</h1>
       </header>
 
+      {/* Entrenos sin lugar */}
+      {unplaced.length > 0 && (
+        <div className="mb-4 rounded-md border border-blood-500/40 bg-blood-500/[0.07] p-4 edge-blood animate-pop">
+          <div className="display text-lg leading-none">¿Dónde entrenaste?</div>
+          <p className="text-xs text-ink-400 mt-1.5 mb-3 leading-relaxed">
+            {unplaced.length === 1 ? 'Este entreno se guardó' : 'Estos entrenos se guardaron'} antes de separar gym y casa.
+            Hasta que {unplaced.length === 1 ? 'lo clasifiques' : 'los clasifiques'}, no {unplaced.length === 1 ? 'cuenta' : 'cuentan'} para las sugerencias de peso.
+          </p>
+          <div className="space-y-2">
+            {unplaced.map((x) => {
+              const d = routine.find((r) => r.id === x.dayId)
+              return (
+                <div key={x.id} className="flex items-center gap-2 rounded-sm bg-ink-900 p-2 pl-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="display text-[15px] leading-none">{d?.name ?? x.dayId} <span className="text-ink-400 text-xs">— Hoja {d?.sheet}</span></div>
+                    <div className="text-[11px] text-ink-400 capitalize mt-1">{longDate(x.finishedAt)} · {x.sets.filter((z) => z.done).length} series</div>
+                  </div>
+                  {(['gym', 'casa'] as const).map((p) => (
+                    <button key={p} onClick={() => actions.updateSession(x.id, { place: p })}
+                            className="h-10 px-3 rounded-sm bg-ink-800 border border-ink-700 label text-[10px] text-bone active:bg-blood-500">
+                      {PLACE_LABEL[p]}
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Entreno sin terminar */}
       {active && activeDay && (
         <button onClick={() => onStart(activeDay)}
@@ -39,7 +81,7 @@ export function Today({ onStart }: { onStart: (day: Day) => void }) {
           <span className="h-2.5 w-2.5 rounded-full pulse-soft shrink-0" style={{ background: activeDay.hex }} />
           <div className="flex-1 min-w-0">
             <div className="display text-lg leading-none">Entreno en curso</div>
-            <div className="text-xs text-ink-400">{activeDay.name} · Hoja {activeDay.sheet} · {active.sets.filter((x) => x.done).length} series hechas</div>
+            <div className="text-xs text-ink-400">{activeDay.name} · Hoja {activeDay.sheet} · {PLACE_LABEL[active.place ?? 'gym']} · {active.sets.filter((x) => x.done).length} series hechas</div>
           </div>
           <span className="text-sm font-bold shrink-0" style={{ color: activeDay.hex }}>Continuar ›</span>
         </button>
@@ -151,6 +193,8 @@ export function Today({ onStart }: { onStart: (day: Day) => void }) {
           ))}
         </div>
       </details>
+      <PlacePicker open={!!picking} onClose={() => setPicking(null)} onPick={go} last={state.settings.lastPlace}
+                   title={picking ? `${picking.name} — ¿dónde?` : undefined} />
     </div>
   )
 }

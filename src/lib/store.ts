@@ -1,10 +1,12 @@
 import { useSyncExternalStore } from 'react'
-import type { AppState, Day, ExerciseMeta, Session, Settings } from '../types'
+import type { AppState, Day, ExerciseMeta, Place, Session, Settings } from '../types'
+import { sanitizeSet } from './number'
 import { registerMeta } from './meta'
 import { ROUTINE, CYCLE } from '../data/routine'
 
 const KEY = 'gym-pablo:v1'
-const VERSION = 1
+// La clave no cambia nunca: cambiarla dejaría atrás los datos del teléfono
+const VERSION = 2
 
 const EMPTY: AppState = {
   version: VERSION,
@@ -15,18 +17,26 @@ const EMPTY: AppState = {
   customMeta: {},
 }
 
+const cleanSession = (s: Session): Session => ({ ...s, sets: (s.sets ?? []).map(sanitizeSet), notes: s.notes ?? {} })
+
+/** Lleva datos de cualquier versión anterior (o de un respaldo) al formato actual */
+function migrate(parsed: Partial<AppState>): AppState {
+  return {
+    ...EMPTY,
+    ...parsed,
+    version: VERSION,
+    settings: { ...EMPTY.settings, ...parsed.settings },
+    sessions: (parsed.sessions ?? []).map(cleanSession),
+    active: parsed.active ? cleanSession(parsed.active) : null,
+    customMeta: parsed.customMeta ?? {},
+  }
+}
+
 function read(): AppState {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return EMPTY
-    const parsed = JSON.parse(raw) as Partial<AppState>
-    return {
-      ...EMPTY,
-      ...parsed,
-      settings: { ...EMPTY.settings, ...parsed.settings },
-      sessions: parsed.sessions ?? [],
-      customMeta: parsed.customMeta ?? {},
-    }
+    return migrate(JSON.parse(raw) as Partial<AppState>)
   } catch {
     return EMPTY
   }
@@ -79,6 +89,14 @@ export const actions = {
   discardActive() {
     commit({ ...state, active: null })
   },
+  /** Corregir un entreno ya guardado (series, lugar) */
+  updateSession(id: string, patch: Partial<Session>) {
+    commit({ ...state, sessions: state.sessions.map((s) => (s.id === id ? { ...s, ...patch } : s)) })
+  },
+  setPlaceOfActive(place: Place) {
+    if (!state.active) return
+    commit({ ...state, active: { ...state.active, place }, settings: { ...state.settings, lastPlace: place } })
+  },
   deleteSession(id: string) {
     commit({ ...state, sessions: state.sessions.filter((s) => s.id !== id) })
   },
@@ -96,8 +114,8 @@ export const actions = {
   addMeta(dbName: string, meta: ExerciseMeta) {
     commit({ ...state, customMeta: { ...state.customMeta, [dbName]: meta } })
   },
-  replaceAll(next: AppState) {
-    commit({ ...EMPTY, ...next, version: VERSION })
+  replaceAll(next: Partial<AppState>) {
+    commit(migrate(next))
   },
 }
 

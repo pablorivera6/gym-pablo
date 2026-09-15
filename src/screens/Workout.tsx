@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import type { Day, Exercise, LoggedSet, Session } from '../types'
+import type { Day, Exercise, LoggedSet, Place, Session } from '../types'
+import { PLACE_LABEL } from '../types'
 import { actions, useStore } from '../lib/store'
 import { getMeta } from '../lib/meta'
 import { lastPerformance, setsOf, suggest } from '../lib/progression'
@@ -7,6 +8,7 @@ import { kg as fmtKg, relativeDay, repRange } from '../lib/format'
 import { ExerciseImage } from '../components/ExerciseImage'
 import { RestTimer } from '../components/RestTimer'
 import { Badge, Sheet } from '../components/ui'
+import { NumField } from '../components/NumField'
 
 type Row = { setIndex: number; side?: 'L' | 'R' }
 
@@ -31,12 +33,16 @@ export function Workout({ day, onExit }: { day: Day; onExit: () => void }) {
   const [extra, setExtra] = useState<Record<string, number>>({})
   const [noteFor, setNoteFor] = useState<Exercise | null>(null)
   const [confirmFinish, setConfirmFinish] = useState(false)
+  /** fila a la que le falta un dato al intentar marcarla */
+  const [needs, setNeeds] = useState<string | null>(null)
 
   if (!session) return null
+  // Entrenos empezados antes de esta versión: se asumen en el gym hasta que lo cambies arriba
+  const place: Place = session.place ?? 'gym'
 
   const patch = (exId: string, r: Row, data: Partial<LoggedSet>) => {
     const existing = find(session, exId, r)
-    const base: LoggedSet = existing ?? { exerciseId: exId, setIndex: r.setIndex, side: r.side, kg: 0, reps: 0, done: false }
+    const base: LoggedSet = existing ?? { exerciseId: exId, setIndex: r.setIndex, side: r.side, kg: null, reps: null, done: false }
     const next = { ...base, ...data }
     actions.setActive({
       ...session,
@@ -61,7 +67,14 @@ export function Workout({ day, onExit }: { day: Day; onExit: () => void }) {
             <div className="display text-xl leading-none truncate">
               {day.name} <span className="text-ink-400 text-sm">— Hoja {day.sheet}</span>
             </div>
-            <div className="label text-[9px] text-ink-400 mt-1">{doneCount} / {totalRows} series</div>
+            <div className="flex items-center gap-2 mt-1">
+              <button onClick={() => actions.setPlaceOfActive(place === 'gym' ? 'casa' : 'gym')}
+                      className="label text-[9px] text-blood-300 border border-blood-500/40 rounded-sm px-1.5 py-[1px]"
+                      aria-label={`Entrenando en ${PLACE_LABEL[place]}. Tocar para cambiar`}>
+                {PLACE_LABEL[place]} ⇄
+              </button>
+              <span className="label text-[9px] text-ink-400">{doneCount} / {totalRows} series</span>
+            </div>
           </div>
           <button onClick={() => setConfirmFinish(true)}
                   className="h-9 px-4 rounded-sm bg-blood-500 label text-[10px] text-bone active:bg-blood-400">
@@ -81,7 +94,7 @@ export function Workout({ day, onExit }: { day: Day; onExit: () => void }) {
           const doneHere = logged.filter((s) => s?.done).length
           const complete = doneHere === rows.length
           const meta = getMeta(ex.dbName)
-          const last = lastPerformance(state.sessions, ex.id)
+          const last = lastPerformance(state.sessions, ex.id, place)
           const tip = suggest(ex, last?.sets ?? null)
 
           return (
@@ -143,19 +156,19 @@ export function Workout({ day, onExit }: { day: Day; onExit: () => void }) {
                     {last ? (
                       <>
                         <div className="label text-[9px] text-ink-400 mb-2">
-                          Última vez — {relativeDay(last.session.finishedAt!)}
+                          Última vez en {PLACE_LABEL[place]} — {relativeDay(last.session.finishedAt!)}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {last.sets.map((s, k) => (
                             <span key={k} className="rounded-sm bg-ink-800 px-2 py-1 text-xs font-mono tabular-nums">
                               {s.side && <b className="text-ink-400 mr-1">{s.side}</b>}
-                              {fmtKg(s.kg)} × {s.reps}
+                              {fmtKg(s.kg ?? 0)} × {s.reps}
                             </span>
                           ))}
                         </div>
                       </>
                     ) : (
-                      <div className="text-xs text-ink-400">Primera vez que registras este ejercicio. Anota tu peso y la próxima te digo si subir.</div>
+                      <div className="text-xs text-ink-400">Primera vez que registras este ejercicio en {PLACE_LABEL[place].toLowerCase()}. Anota tu peso y la próxima te digo si subir.</div>
                     )}
 
                     {tip.kind === 'up' && (
@@ -185,40 +198,54 @@ export function Workout({ day, onExit }: { day: Day; onExit: () => void }) {
                     </div>
                     {rows.map((r, ri) => {
                       const s = logged[ri]
+                      const key = `${ex.id}:${r.setIndex}:${r.side ?? ''}`
                       const prev = last?.sets.find((x) => x.setIndex === r.setIndex && x.side === r.side)
-                      const hintKg = tip.kind === 'up' ? tip.kg : tip.kind === 'hold' ? tip.kg : undefined
+                      const hintKg = tip.kind === 'up' || tip.kind === 'hold' ? tip.kg : prev?.kg ?? undefined
+                      const hintReps = prev?.reps
+                      const missing = needs === key && !s?.done
+                      const field = 'h-11 w-full rounded-sm bg-ink-800 text-center font-bold tabular-nums outline-none focus:ring-2 focus:ring-white/25 placeholder:text-ink-600 placeholder:font-normal'
                       return (
-                        <div key={ri} className={`grid grid-cols-[auto_1fr_1fr_auto] gap-2 items-center rounded p-1.5 transition-colors ${s?.done ? 'bg-blood-500/10' : 'bg-ink-900'}`}>
+                        <div key={ri} className={`grid grid-cols-[auto_1fr_1fr_auto] gap-2 items-center rounded p-1.5 transition-colors ${
+                          missing ? 'bg-blood-500/20 ring-1 ring-blood-500' : s?.done ? 'bg-blood-500/10' : 'bg-ink-900'
+                        }`}>
                           <div className="w-14 pl-2 text-sm font-semibold tabular-nums text-ink-200">
                             {r.setIndex + 1}{r.side && <span className="text-ink-400 text-xs ml-0.5">{r.side}</span>}
                           </div>
-                          <input
-                            type="number" inputMode="decimal" step="0.25" min="0"
-                            value={s?.kg ?? ''} placeholder={hintKg !== undefined ? fmtKg(hintKg) : prev ? fmtKg(prev.kg) : '0'}
-                            onChange={(e) => patch(ex.id, r, { kg: e.target.value === '' ? 0 : Number(e.target.value) })}
-                            className="h-11 w-full rounded-sm bg-ink-800 text-center font-bold tabular-nums outline-none focus:ring-2 focus:ring-white/25 placeholder:text-ink-600 placeholder:font-normal"
-                          />
-                          <input
-                            type="number" inputMode="numeric" step="1" min="0"
-                            value={s?.reps ?? ''} placeholder={prev ? String(prev.reps) : String(ex.repMax)}
-                            onChange={(e) => patch(ex.id, r, { reps: e.target.value === '' ? 0 : Number(e.target.value) })}
-                            className="h-11 w-full rounded-sm bg-ink-800 text-center font-bold tabular-nums outline-none focus:ring-2 focus:ring-white/25 placeholder:text-ink-600 placeholder:font-normal"
-                          />
+                          <NumField decimal label={`Kilos serie ${r.setIndex + 1}`}
+                            value={s?.kg} onChange={(kg) => patch(ex.id, r, { kg })}
+                            placeholder={hintKg !== undefined ? fmtKg(hintKg) : 'kg'}
+                            className={field} />
+                          <NumField label={`Repeticiones serie ${r.setIndex + 1}`}
+                            value={s?.reps} onChange={(reps) => patch(ex.id, r, { reps })}
+                            placeholder={hintReps !== undefined ? String(hintReps) : `${ex.repMin === ex.repMax ? ex.repMax : `${ex.repMin}-${ex.repMax}`}`}
+                            className={field} />
                           <button
                             onClick={() => {
-                              const willBeDone = !s?.done
-                              // Al marcar sin haber escrito nada, uso el objetivo sugerido
-                              const fill = willBeDone && !s?.kg
-                                ? { kg: hintKg ?? prev?.kg ?? 0, reps: s?.reps || prev?.reps || ex.repMax }
-                                : {}
-                              patch(ex.id, r, { done: willBeDone, ...fill })
-                              if (willBeDone && state.settings.vibrate && 'vibrate' in navigator) navigator.vibrate(20)
+                              if (s?.done) { patch(ex.id, r, { done: false }); return }
+                              // Campo vacío = uso lo que muestra el placeholder, pero solo si
+                              // viene de datos reales; nunca invento 0 kg ni reps.
+                              const kg = s?.kg ?? hintKg ?? null
+                              const reps = s?.reps ?? hintReps ?? null
+                              if (kg == null || reps == null) {
+                                setNeeds(key)
+                                setTimeout(() => setNeeds((k) => (k === key ? null : k)), 1600)
+                                return
+                              }
+                              setNeeds(null)
+                              patch(ex.id, r, { done: true, kg, reps })
+                              if (state.settings.vibrate && 'vibrate' in navigator) navigator.vibrate(20)
                             }}
                             className={`h-11 w-11 rounded-sm text-lg font-bold transition-colors ${
                               s?.done ? 'bg-blood-500 text-bone' : 'bg-ink-800 text-ink-600'
                             }`}
                             aria-label={s?.done ? 'Desmarcar serie' : 'Marcar serie hecha'}
                           >✓</button>
+                          {missing && (
+                            <div className="col-span-4 px-2 pb-1 label text-[9px] text-blood-300">
+                              {[s?.kg == null && hintKg === undefined && 'los kg', s?.reps == null && hintReps === undefined && 'las reps']
+                                .filter(Boolean).join(' y ').replace(/^/, 'Escribe ')} para marcarla
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -293,9 +320,10 @@ export function Workout({ day, onExit }: { day: Day; onExit: () => void }) {
   )
 }
 
-export const emptySession = (dayId: Day['id']): Session => ({
+export const emptySession = (dayId: Day['id'], place: Place): Session => ({
   id: `${Date.now()}`,
   dayId,
+  place,
   startedAt: new Date().toISOString(),
   sets: [],
   notes: {},

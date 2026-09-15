@@ -50,14 +50,22 @@ export type LoggedSet = {
   setIndex: number
   /** 'L' | 'R' solo cuando el ejercicio es perSide */
   side?: 'L' | 'R'
-  kg: number
-  reps: number
+  /** null = el campo está vacío. 0 es un valor real (ej. dominadas sin lastre). */
+  kg: number | null
+  reps: number | null
   done: boolean
 }
+
+/** Dónde se entrenó: las máquinas cambian, así que los pesos se llevan por separado */
+export type Place = 'gym' | 'casa'
+
+export const PLACE_LABEL: Record<Place, string> = { gym: 'Gym', casa: 'Casa' }
 
 export type Session = {
   id: string
   dayId: DayId
+  /** undefined solo en entrenos guardados antes de que existiera esta opción */
+  place?: Place
   /** ISO date-time de inicio */
   startedAt: string
   /** ISO date-time de fin, undefined si sigue en curso */
@@ -72,6 +80,8 @@ export type Settings = {
   cycleIndex: number
   restSeconds: number
   vibrate: boolean
+  /** último lugar elegido, para preseleccionarlo */
+  lastPlace?: Place
 }
 
 export type AppState = {

@@ -14,19 +14,30 @@ export function Settings() {
   const [editing, setEditing] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
-  const exportBackup = () => {
+  const exportBackup = async () => {
+    const name = `gym-pablo-${new Date().toISOString().slice(0, 10)}.json`
     const blob = new Blob([JSON.stringify(getState(), null, 2)], { type: 'application/json' })
+    // En el iPhone (app instalada) una descarga normal no hace nada: uso el menú Compartir
+    const file = new File([blob], name, { type: 'application/json' })
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Respaldo GYM Pablo' })
+        return
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return // cerró el menú
+      }
+    }
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `gym-pablo-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = name
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   const importBackup = async (file: File) => {
     try {
-      const parsed = JSON.parse(await file.text()) as AppState
+      const parsed = JSON.parse(await file.text()) as Partial<AppState>
       if (!Array.isArray(parsed.sessions)) throw new Error('El archivo no tiene entrenos')
       if (!confirm(`Vas a reemplazar tus datos actuales por ${parsed.sessions.length} entrenos del respaldo. ¿Seguro?`)) return
       actions.replaceAll(parsed)
@@ -72,7 +83,7 @@ export function Settings() {
           <Mini label="Series" value={String(s.totalSets)} />
           <Mini label="Volumen" value={volumeLabel(s.totalVolume)} />
         </div>
-        <Row onClick={exportBackup} label="Exportar respaldo" sub="Guarda un archivo .json con todo tu historial" chevron />
+        <Row onClick={exportBackup} label="Exportar respaldo" sub="Envíalo por AirDrop, WhatsApp o guárdalo en Archivos" chevron />
         <Row onClick={() => fileRef.current?.click()} label="Restaurar respaldo" sub="Reemplaza tus datos por los de un archivo" chevron />
         <input ref={fileRef} type="file" accept="application/json" className="hidden"
                onChange={(e) => { const f = e.target.files?.[0]; if (f) importBackup(f); e.target.value = '' }} />
